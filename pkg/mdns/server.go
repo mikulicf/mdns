@@ -9,6 +9,7 @@ import (
 	"net"
 	"strings"
 	"sync/atomic"
+	"time"
 
 	"github.com/miekg/dns"
 )
@@ -56,6 +57,75 @@ type Server struct {
 
 	shutdown   int32
 	shutdownCh chan struct{}
+}
+
+// GetIPv4Addresses returns all IPv4 addresses of the system excluding loopback addresses.
+func GetIPv4Addresses() ([]string, error) {
+	interfaces, err := net.Interfaces()
+	if err != nil {
+		return nil, err
+	}
+
+	var ips []string
+	for _, interf := range interfaces {
+		addrs, err := interf.Addrs()
+		if err != nil {
+			return nil, err
+		}
+
+		for _, addr := range addrs {
+			ip, _, err := net.ParseCIDR(addr.String())
+			if err != nil {
+				return nil, err
+			}
+			ipv4 := ip.To4()
+			if ipv4 != nil && !toExclude(ipv4) {
+				ips = append(ips, ipv4.String())
+			}
+		}
+	}
+
+	return ips, nil
+}
+
+// Checks if an IP is or loopback address.
+func toExclude(ip net.IP) bool {
+	privateIPBlocks := []*net.IPNet{
+		{IP: net.IPv4(127, 0, 0, 0), Mask: net.CIDRMask(8, 32)},
+	}
+	for _, block := range privateIPBlocks {
+		if block.Contains(ip) {
+			return true
+		}
+	}
+	return false
+}
+func NewServerWithTicker(config *Config, interval time.Duration) {
+	var server *Server
+	registerServer := func() {
+		if server != nil {
+			if err := server.Shutdown(); err != nil {
+				log.Printf("[WARN] mdns: Failed to shutdown server: %v", err)
+			}
+		}
+
+		var err error
+		server, err = NewServer(config)
+		if err != nil {
+			log.Printf("[ERR] mdns: Failed to create server: %v", err)
+		}
+	}
+
+	// Register server for the first time
+	registerServer()
+
+	// Set up ticker for re-registering
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		registerServer()
+	}
 }
 
 // NewServer is used to create a new mDNS server from a config

@@ -26,15 +26,13 @@ type ServiceEntry struct {
 	Info       string
 	InfoFields []string
 
-	Addr net.IP // @Deprecated
-
 	hasTXT bool
 	sent   bool
 }
 
 // complete is used to check if we have all the info we need
 func (s *ServiceEntry) complete() bool {
-	return (s.AddrV4 != nil || s.AddrV6 != nil || s.Addr != nil) && s.Port != 0 && s.hasTXT
+	return (s.AddrV4 != nil || s.AddrV6 != nil) && s.Port != 0 && s.hasTXT
 }
 
 // QueryParam is used to customize how a Lookup is performed
@@ -59,6 +57,18 @@ func DefaultParams(service string) *QueryParam {
 		WantUnicastResponse: false, // TODO(reddaly): Change this default.
 		DisableIPv4:         false,
 		DisableIPv6:         false,
+	}
+}
+
+func QueryIndefinitely(params *QueryParam, intervalSeconds int) error {
+	for {
+		err := Query(params)
+		if err != nil {
+			return fmt.Errorf("error encountered while querying: %s", err.Error())
+		}
+
+		// Sleep for the specified interval
+		time.Sleep(time.Duration(intervalSeconds) * time.Second)
 	}
 }
 
@@ -120,7 +130,7 @@ type client struct {
 // for records
 func newClient(v4 bool, v6 bool) (*client, error) {
 	if !v4 && !v6 {
-		return nil, fmt.Errorf("Must enable at least one of IPv4 and IPv6 querying")
+		return nil, fmt.Errorf("must enable at least one of IPv4 and IPv6 querying")
 	}
 
 	// TODO(reddaly): At least attempt to bind to the port required in the spec.
@@ -300,13 +310,11 @@ func (c *client) query(params *QueryParam) error {
 				case *dns.A:
 					// Pull out the IP
 					inp = ensureName(inprogress, rr.Hdr.Name)
-					inp.Addr = rr.A // @Deprecated
 					inp.AddrV4 = rr.A
 
 				case *dns.AAAA:
 					// Pull out the IP
 					inp = ensureName(inprogress, rr.Hdr.Name)
-					inp.Addr = rr.AAAA // @Deprecated
 					inp.AddrV6 = rr.AAAA
 				}
 			}
