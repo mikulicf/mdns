@@ -100,40 +100,53 @@ func toExclude(ip net.IP) bool {
 	}
 	return false
 }
-func NewServerWithTicker(config *Config, interval time.Duration) {
+func NewServerWithTicker(config *Config, interval time.Duration) error {
 	var server *Server
-	registerServer := func() {
+	registerServer := func() error {
 		if server != nil {
 			if err := server.Shutdown(); err != nil {
-				log.Printf("[WARN] mdns: Failed to shutdown server: %v", err)
+				return err
 			}
 		}
 
 		var err error
 		server, err = NewServer(config)
 		if err != nil {
-			log.Printf("[ERR] mdns: Failed to create server: %v", err)
+			return err
 		}
+		return nil
 	}
 
 	// Register server for the first time
-	registerServer()
+	err := registerServer()
+	if err != nil {
+		return err
+	}
 
 	// Set up ticker for re-registering
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
 	for range ticker.C {
-		registerServer()
+		err := registerServer()
+		if err != nil {
+			return err
+		}
 	}
+	return nil
 }
 
 // NewServer is used to create a new mDNS server from a config
 func NewServer(config *Config) (*Server, error) {
 	// Create the listeners
-	ipv4List, _ := net.ListenMulticastUDP("udp4", config.Iface, ipv4Addr)
-	ipv6List, _ := net.ListenMulticastUDP("udp6", config.Iface, ipv6Addr)
-
+	ipv4List, err := net.ListenMulticastUDP("udp4", config.Iface, ipv4Addr)
+	if err != nil {
+		return nil, err
+	}
+	ipv6List, err := net.ListenMulticastUDP("udp6", config.Iface, ipv6Addr)
+	if err != nil {
+		return nil, err
+	}
 	// Check if we have any listener
 	if ipv4List == nil && ipv6List == nil {
 		return nil, fmt.Errorf("no multicast listeners could be started")

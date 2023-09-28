@@ -63,7 +63,7 @@ func validateFQDN(s string) error {
 // check to ensure that the instance name does not conflict with other instance
 // names, and, if required, select a new name.  There may also be conflicting
 // hostName A/AAAA records.
-func NewMDNSService(instance, service, domain, hostName string, port int, ips []net.IP, txt []string) (*MDNSService, error) {
+func NewMDNSService(instance, service, domain, fqdnHost string, port int, ips []net.IP, txt []string) (*MDNSService, error) {
 	// Sanity check inputs
 	if instance == "" {
 		return nil, fmt.Errorf("missing service instance name")
@@ -84,30 +84,30 @@ func NewMDNSService(instance, service, domain, hostName string, port int, ips []
 	}
 
 	// Get host information if no host is specified.
-	if hostName == "" {
+	if fqdnHost == "" {
 		var err error
-		hostName, err = os.Hostname()
+		hostname, err := os.Hostname()
 		if err != nil {
 			return nil, fmt.Errorf("could not determine host: %v", err)
 		}
-		hostName = fmt.Sprintf("%s.", hostName)
+		fqdnHost = fmt.Sprintf("%s.%s", hostname, domain)
 	}
-	if err := validateFQDN(hostName); err != nil {
-		return nil, fmt.Errorf("hostName %q is not a fully-qualified domain name: %v", hostName, err)
+	if err := validateFQDN(fqdnHost); err != nil {
+		return nil, fmt.Errorf("hostName %q is not a fully-qualified domain name: %v", fqdnHost, err)
 	}
 
 	if len(ips) == 0 {
 		var err error
-		ips, err = net.LookupIP(hostName)
+		ips, err = net.LookupIP(fqdnHost)
 		if err != nil {
 			// Try appending the host domain suffix and lookup again
 			// (required for Linux-based hosts)
-			tmpHostName := fmt.Sprintf("%s%s", hostName, domain)
+			tmpHostName := fmt.Sprintf("%s%s", fqdnHost, domain)
 
 			ips, err = net.LookupIP(tmpHostName)
 
 			if err != nil {
-				return nil, fmt.Errorf("could not determine host IP addresses for %s", hostName)
+				return nil, fmt.Errorf("could not determine host IP addresses for %s", fqdnHost)
 			}
 		}
 	}
@@ -121,7 +121,7 @@ func NewMDNSService(instance, service, domain, hostName string, port int, ips []
 		Instance:     instance,
 		Service:      service,
 		Domain:       domain,
-		HostName:     hostName,
+		HostName:     fqdnHost,
 		Port:         port,
 		IPs:          ips,
 		TXT:          txt,

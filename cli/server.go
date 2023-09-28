@@ -3,6 +3,7 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"os/signal"
 	"syscall"
@@ -35,10 +36,13 @@ func NewServerCommand() *cobra.Command {
 				fmt.Println("Error:", err)
 				return
 			}
-			fmt.Println(string(data))
 			service, _ := mdns.NewMDNSService(host, "_foobar._tcp", "", "", 8000, nil, []string{string(data)})
 
-			mdns.NewServerWithTicker(&mdns.Config{Zone: service}, time.Minute*2)
+			err = mdns.NewServerWithTicker(&mdns.Config{Zone: service}, time.Minute*2)
+			if err != nil {
+				log.Println(err)
+				return
+			}
 
 			sigCh := make(chan os.Signal, 1)
 			signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
