@@ -45,6 +45,8 @@ type Config struct {
 	// LogEmptyResponses indicates the server should print an informative message
 	// when there is an mDNS query for which the server has no response.
 	LogEmptyResponses bool
+
+	Ipv6 bool
 }
 
 // mDNS server is used to listen for mDNS queries and respond if we
@@ -143,28 +145,39 @@ func NewServer(config *Config) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	ipv6List, err := net.ListenMulticastUDP("udp6", config.Iface, ipv6Addr)
-	if err != nil {
-		return nil, err
-	}
+
 	// Check if we have any listener
-	if ipv4List == nil && ipv6List == nil {
+	if ipv4List == nil {
 		return nil, fmt.Errorf("no multicast listeners could be started")
 	}
 
 	s := &Server{
 		config:     config,
 		ipv4List:   ipv4List,
-		ipv6List:   ipv6List,
 		shutdownCh: make(chan struct{}),
+	}
+
+	if config.Ipv6 {
+		ipv6List, err := net.ListenMulticastUDP("udp6", config.Iface, ipv6Addr)
+		if err != nil {
+			return nil, err
+		}
+		if ipv6List == nil {
+			return nil, fmt.Errorf("no multicast listeners could be started")
+		}
+
+		s = &Server{
+			ipv6List: ipv6List,
+		}
+
+		if ipv6List != nil {
+			go s.recv(s.ipv6List)
+		}
+
 	}
 
 	if ipv4List != nil {
 		go s.recv(s.ipv4List)
-	}
-
-	if ipv6List != nil {
-		go s.recv(s.ipv6List)
 	}
 
 	return s, nil
@@ -182,8 +195,10 @@ func (s *Server) Shutdown() error {
 	if s.ipv4List != nil {
 		s.ipv4List.Close()
 	}
-	if s.ipv6List != nil {
-		s.ipv6List.Close()
+	if s.config.Ipv6 {
+		if s.ipv6List != nil {
+			s.ipv6List.Close()
+		}
 	}
 	return nil
 }
@@ -368,7 +383,10 @@ func (s *Server) sendResponse(resp *dns.Msg, from net.Addr, unicast bool) error 
 		_, err = s.ipv4List.WriteToUDP(buf, addr)
 		return err
 	} else {
-		_, err = s.ipv6List.WriteToUDP(buf, addr)
-		return err
+		if s.config.Ipv6 {
+			_, err = s.ipv6List.WriteToUDP(buf, addr)
+			return err
+		}
 	}
+	return nil
 }
