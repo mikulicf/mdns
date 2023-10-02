@@ -11,6 +11,8 @@ func NewRootCommand() *cobra.Command {
 
 	rootCmd.AddCommand(NewClientCommand())
 	rootCmd.AddCommand(NewServerCommand())
+	rootCmd.AddCommand(NewIpCommand())
+	rootCmd.AddCommand(NewIfaceCommand())
 
 	return rootCmd
 }

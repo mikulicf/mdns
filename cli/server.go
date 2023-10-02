@@ -9,7 +9,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/mikulicf/mdns/pkg/mdns"
+	"github.com/mikulicf/mdns"
 	"github.com/spf13/cobra"
 )
 
@@ -19,12 +19,27 @@ type HostInfo struct {
 }
 
 func NewServerCommand() *cobra.Command {
+	timeout := 0
+	interfaces := make([]string, 0)
+	domain := "local."
+	service := "_foobar._tcp"
+	port := 8080
+	ipv6 := false
+
 	serverCommand := &cobra.Command{
 		Use:   "server",
 		Short: "start mdns server",
 		Run: func(_ *cobra.Command, _ []string) {
-			host, _ := os.Hostname()
-			addr, _ := mdns.GetIPv4Addresses()
+			host, err := os.Hostname()
+			if err != nil {
+				log.Println(err)
+				return
+			}
+			addr, err := mdns.GetIPv4Addresses()
+			if err != nil {
+				log.Println(err)
+				return
+			}
 
 			info := HostInfo{
 				Hostname: host,
@@ -36,9 +51,20 @@ func NewServerCommand() *cobra.Command {
 				fmt.Println("Error:", err)
 				return
 			}
-			service, _ := mdns.NewMDNSService(host, "_foobar._tcp", "", "", 8000, nil, []string{string(data)})
 
-			err = mdns.NewServerWithTicker(&mdns.Config{Zone: service}, time.Minute*2)
+			service, err := mdns.NewMDNSService(host, service, "", "", port, nil, []string{string(data)})
+			if err != nil {
+				log.Println(err)
+				return
+			}
+
+			iface, err := mdns.GetDefaultInterface()
+			if err != nil {
+				log.Println(err)
+				return
+			}
+
+			err = mdns.NewServerWithTicker(&mdns.Config{Zone: service, Ipv6: false, Iface: iface}, time.Minute*2)
 			if err != nil {
 				log.Println(err)
 				return
@@ -49,6 +75,13 @@ func NewServerCommand() *cobra.Command {
 			<-sigCh
 		},
 	}
+
+	serverCommand.Flags().StringVarP(&domain, "domain", "d", domain, "mDNS domain")
+	serverCommand.Flags().StringVarP(&service, "service", "s", service, "service name")
+	serverCommand.Flags().IntVarP(&port, "port", "p", port, "service port")
+	serverCommand.Flags().StringArrayVarP(&interfaces, "interface", "i", interfaces, "interface")
+	serverCommand.Flags().IntVarP(&timeout, "timeout", "t", timeout, "timeout in seconds")
+	serverCommand.Flags().BoolVar(&ipv6, "ipv6", ipv6, "enable ipv6")
 
 	return serverCommand
 }

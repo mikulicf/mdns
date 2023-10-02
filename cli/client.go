@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mikulicf/mdns/pkg/mdns"
+	"github.com/mikulicf/mdns"
 	"github.com/spf13/cobra"
 )
 
@@ -35,7 +35,7 @@ func NewClientCommand() *cobra.Command {
 				}
 			}()
 
-			mdns.Query(&mdns.QueryParam{Service: "_foobar._tcp", Domain: "", Timeout: time.Second, DisableIPv6: true, Entries: entriesCh})
+			mdns.Query(&mdns.QueryParam{Service: "_foobar._tcp", Domain: "", Timeout: time.Second * 5, DisableIPv6: true, Entries: entriesCh})
 			close(entriesCh)
 		},
 	}

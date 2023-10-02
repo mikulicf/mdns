@@ -4,9 +4,12 @@
 package mdns
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"net"
+	"os/exec"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -61,6 +64,15 @@ type Server struct {
 	shutdownCh chan struct{}
 }
 
+type routeInfo struct {
+	InterfaceIndex int
+}
+
+type interfaceInfo struct {
+	NetConnectionID string
+	MACAddress      string
+}
+
 // GetIPv4Addresses returns all IPv4 addresses of the system excluding loopback addresses.
 func GetIPv4Addresses() ([]string, error) {
 	interfaces, err := net.Interfaces()
@@ -90,6 +102,60 @@ func GetIPv4Addresses() ([]string, error) {
 	return ips, nil
 }
 
+func GetDefaultInterface() (*net.Interface, error) {
+	var ifaceName string
+
+	switch runtime.GOOS {
+	case "windows":
+		// Fetch the default route using WMI on Windows
+		routeCmd := exec.Command("powershell", "-Command", "Get-WmiObject -Query 'SELECT * FROM Win32_IP4RouteTable WHERE Destination=\"0.0.0.0\"' | ConvertTo-Json")
+		routeOutput, err := routeCmd.Output()
+		if err != nil {
+			return nil, err
+		}
+		var route routeInfo
+		json.Unmarshal(routeOutput, &route)
+
+		// Fetch the interface based on the InterfaceIndex from the default route
+		ifaceCmd := exec.Command("powershell", "-Command", fmt.Sprintf("Get-WmiObject -Query 'SELECT * FROM Win32_NetworkAdapter WHERE InterfaceIndex=%d' | ConvertTo-Json", route.InterfaceIndex))
+		ifaceOutput, err := ifaceCmd.Output()
+		if err != nil {
+			return nil, err
+		}
+		var winIfaceInfo interfaceInfo
+		json.Unmarshal(ifaceOutput, &winIfaceInfo)
+
+		ifaceName = winIfaceInfo.NetConnectionID
+
+	case "linux":
+		// Fetch the default route using `ip` command on Linux
+		routeCmd := exec.Command("ip", "route", "list", "default")
+		routeOutput, err := routeCmd.Output()
+		if err != nil {
+			return nil, err
+		}
+		fields := strings.Fields(string(routeOutput))
+		for i, field := range fields {
+			if field == "dev" && i+1 < len(fields) {
+				ifaceName = fields[i+1]
+				break
+			}
+		}
+	}
+
+	if ifaceName == "" {
+		return nil, fmt.Errorf("default interface not found")
+	}
+
+	// Get the net.Interface based on the name
+	iface, err := net.InterfaceByName(ifaceName)
+	if err != nil {
+		return nil, err
+	}
+
+	return iface, nil
+}
+
 // Checks if an IP is or loopback address.
 func toExclude(ip net.IP) bool {
 	privateIPBlocks := []*net.IPNet{
@@ -110,7 +176,6 @@ func NewServerWithTicker(config *Config, interval time.Duration) error {
 				return err
 			}
 		}
-
 		var err error
 		server, err = NewServer(config)
 		if err != nil {
